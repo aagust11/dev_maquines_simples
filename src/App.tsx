@@ -1,20 +1,14 @@
 import { Route, Routes } from 'react-router-dom';
-import ScenePage from './pages/ScenePage';
+import Editor from './routes/Editor';
+import Gallery from './routes/Gallery';
 
-function App() {
+const App = () => {
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <h1>Momentor</h1>
-        <p>Simulador analític de màquines simples per a ESO i Batxillerat</p>
-      </header>
-      <main className="app-main">
-        <Routes>
-          <Route path="/*" element={<ScenePage />} />
-        </Routes>
-      </main>
-    </div>
+    <Routes>
+      <Route path="/" element={<Gallery />} />
+      <Route path="/editor" element={<Editor />} />
+    </Routes>
   );
-}
+};
 
 export default App;
