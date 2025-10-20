@@ -25,6 +25,43 @@ body {
   gap: 1rem;
 }
 
+.editor__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.editor__nav-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editor__nav-button {
+  background: #1d4ed8;
+  border: 1px solid #1e3a8a;
+  color: #f8fafc;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.editor__nav-button:hover {
+  background: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+}
+
+.editor__nav-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.5);
+}
+
+.editor__file-input {
+  display: none;
+}
+
 .editor__header h1 {
   margin: 0 0 0.25rem;
   font-size: 2rem;

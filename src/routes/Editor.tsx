@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  ChangeEvent as ReactChangeEvent,
+  DragEvent as ReactDragEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Link } from 'react-router-dom';
 import type {
   RopeAnchor,
@@ -9,38 +13,15 @@ import type {
 } from '../rope-system';
 import { computeTensions } from '../rope-system';
 import ExplainPanel from '../components/ExplainPanel';
+import {
+  CURRENT_EDITOR_SCENE_VERSION,
+  type CanvasAnchor,
+  type CanvasElement,
+  type EditorSceneSnapshot,
+  type ElementKind,
+} from './editor-types';
+import { decryptMtrToScene, encryptSceneToMtr } from '../storage/mtr';
 import './editor.css';
-
-type RopeAnchorType = RopeAnchor['type'];
-
-type CanvasAnchor = {
-  id: string;
-  label: string;
-  type: RopeAnchorType;
-  offset: { x: number; y: number };
-  attachedToLoad?: boolean;
-  frictionCoefficient?: number;
-  defaultWrapAngle?: number;
-  diameter?: number;
-};
-
-type ElementKind =
-  | 'fixed'
-  | 'pulley'
-  | 'blockAndTackle'
-  | 'lever'
-  | 'winch'
-  | 'load';
-
-type CanvasElement = {
-  id: string;
-  kind: ElementKind;
-  name: string;
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  anchors: CanvasAnchor[];
-  data: Record<string, number | boolean | string>;
-};
 
 type Prefab = {
   id: string;
@@ -380,6 +361,7 @@ function formatNumber(value: number, options: Intl.NumberFormatOptions = {}) {
 
 function Editor() {
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [elements, setElements] = useState<CanvasElement[]>([createFixedSupport(), createLoad()]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -403,6 +385,70 @@ function Editor() {
       return null;
     }
   }, [elements, ropePath, loadMass]);
+
+  const handleSaveScene = useCallback(async () => {
+    try {
+      const snapshot: EditorSceneSnapshot = {
+        editorVersion: CURRENT_EDITOR_SCENE_VERSION,
+        elements,
+        ropePath: sanitizePath(ropePath, elements),
+        gravity,
+        loadMass,
+        inputForceOverride: inputForceOverride ?? null,
+      };
+
+      const blob = await encryptSceneToMtr(snapshot);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'momentor-escena.mtr';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'No s\'ha pogut desar l\'escena .mtr',
+      );
+    }
+  }, [elements, ropePath, gravity, loadMass, inputForceOverride]);
+
+  const handleOpenFilePicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleImportScene = useCallback(
+    async (event: ReactChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const scene = await decryptMtrToScene(buffer);
+        setElements(scene.elements);
+        setRopePath(sanitizePath(scene.ropePath, scene.elements));
+        setGravity(scene.gravity);
+        setLoadMass(scene.loadMass);
+        setInputForceOverride(
+          typeof scene.inputForceOverride === 'number' ? scene.inputForceOverride : undefined,
+        );
+        setSelectedId(null);
+      } catch (error) {
+        console.error(error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : 'No s\'ha pogut carregar el fitxer .mtr',
+        );
+      } finally {
+        event.target.value = '';
+      }
+    },
+    [],
+  );
 
   const analysis = useMemo<RopeTensionResult | null>(() => {
     if (!ropeScene || ropeScene.path.length < 2) {
@@ -668,10 +714,25 @@ function Editor() {
           <h1>Editor de simulacions</h1>
           <p>Construeix escenes combinant prefabs i traça la corda a través de politges.</p>
         </div>
-        <nav>
+        <nav className="editor__nav">
           <Link to="/" className="editor__link">
             ← Tornar a la galeria
           </Link>
+          <div className="editor__nav-actions">
+            <button type="button" onClick={handleOpenFilePicker} className="editor__nav-button">
+              Carrega .mtr
+            </button>
+            <button type="button" onClick={handleSaveScene} className="editor__nav-button">
+              Desa com .mtr
+            </button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".mtr"
+            className="editor__file-input"
+            onChange={handleImportScene}
+          />
         </nav>
       </header>
 
