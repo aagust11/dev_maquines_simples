@@ -8,6 +8,7 @@ import type {
   RopeTensionResult,
 } from '../rope-system';
 import { computeTensions } from '../rope-system';
+import ExplainPanel from '../components/ExplainPanel';
 import './editor.css';
 
 type RopeAnchorType = RopeAnchor['type'];
@@ -451,6 +452,10 @@ function Editor() {
   const efficiency = idealMA > 0 ? Math.min(realMA / idealMA, 1) : 0;
   const workIn = effectiveInputForce ? effectiveInputForce * 1 : 0;
   const workOut = analysis ? analysis.loadForce * (idealMA > 0 ? 1 / idealMA : 0) : 0;
+  const multiplierSum =
+    analysis && analysis.inputForce !== 0
+      ? analysis.loadForce / analysis.inputForce
+      : analysis?.mechanicalAdvantage ?? null;
 
   const validationMessages = useMemo(() => {
     if (!analysis) {
@@ -1146,6 +1151,23 @@ function Editor() {
                   ))}
                 </ul>
               </div>
+            )}
+
+            {analysis && (
+              <ExplainPanel
+                title="Derivació de F_{in}"
+                formulaLatex="F_{in} = \\frac{F_G}{\\sum_i m_i}"
+                substitutions={{
+                  F_G: analysis.loadForce,
+                  '\\sum_i m_i': multiplierSum ?? '—',
+                }}
+                result={{
+                  label: 'F_{in}',
+                  value: analysis.inputForce,
+                  unit: 'N',
+                }}
+                formatNumber={formatNumber}
+              />
             )}
 
             {ropePath.length > 0 && (

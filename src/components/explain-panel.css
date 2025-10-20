@@ -1,0 +1,110 @@
+.explain-panel {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.explain-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.explain-panel__header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.explain-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.explain-panel__actions button {
+  background: #1d4ed8;
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.explain-panel__actions button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(29, 78, 216, 0.25);
+}
+
+.explain-panel__actions button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.explain-panel__steps {
+  display: grid;
+  gap: 1rem;
+}
+
+.explain-panel__step {
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.explain-panel__label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0f172a;
+}
+
+.explain-panel__math {
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.explain-panel__feedbacks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #334155;
+  min-height: 1rem;
+}
+
+.explain-panel__feedback {
+  min-width: 0;
+}
+
+.explain-panel__feedback.success {
+  color: #047857;
+}
+
+.explain-panel__feedback.error {
+  color: #b91c1c;
+}
+
+@media (min-width: 960px) {
+  .explain-panel__steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
