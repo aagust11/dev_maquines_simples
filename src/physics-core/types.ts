@@ -23,6 +23,10 @@ export type SolverOptions = {
   units: Units;
 };
 
-export function ensureNotes(notes?: string[]): string[] {
-  return notes?.filter((note) => note.trim().length > 0) ?? [];
+export function ensureNotes(notes?: Array<string | undefined>): string[] {
+  return (
+    notes?.filter(
+      (note): note is string => typeof note === 'string' && note.trim().length > 0
+    ) ?? []
+  );
 }
