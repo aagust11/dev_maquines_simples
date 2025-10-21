@@ -29,9 +29,14 @@ const SAMPLE_SCENE: EditorSceneSnapshot = {
   inputForceOverride: null,
 };
 
+type BufferNamespace = {
+  from(input: ArrayBuffer): { toString(encoding: 'base64'): string };
+};
+
 function bufferToBase64(buffer: ArrayBuffer): string {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(buffer).toString('base64');
+  const maybeBuffer = (globalThis as { Buffer?: BufferNamespace }).Buffer;
+  if (maybeBuffer) {
+    return maybeBuffer.from(buffer).toString('base64');
   }
 
   let binary = '';
@@ -56,10 +61,13 @@ describe('mtr storage', () => {
 
   it('matches the AES-GCM reference vector', async () => {
     const iv = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array: Uint8Array) => {
-      array.set(iv);
-      return array;
-    });
+    vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(
+      (array: ArrayBufferView) => {
+        const target = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+        target.set(iv);
+        return array;
+      }
+    );
 
     const blob = await encryptSceneToMtr(SAMPLE_SCENE);
     const buffer = await blob.arrayBuffer();
