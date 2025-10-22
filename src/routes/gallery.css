@@ -1,3 +1,20 @@
+.page {
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.page__header h1,
+.page__content h2,
+.example-card header h3 {
+  color: #0f172a;
+}
+
+.page__header p,
+.page__content p,
+.example-card header p {
+  color: #475569;
+}
+
 .examples-grid {
   display: grid;
   gap: 2.5rem;
