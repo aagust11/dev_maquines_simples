@@ -12,6 +12,7 @@ import type {
   RopeTensionResult,
 } from '../rope-system';
 import { computeTensions } from '../rope-system';
+import { solveLeverRequiredForce, solveWinch } from '../physics-core';
 import ExplainPanel from '../components/ExplainPanel';
 import {
   CURRENT_EDITOR_SCENE_VERSION,
@@ -299,11 +300,61 @@ function deriveAnchors(elements: CanvasElement[]): (CanvasAnchor & {
   );
 }
 
-function toRopeScene(
+type LeverMachineConfig = {
+  elementId: string;
+  elementName: string;
+  distanceEffort: number;
+  distanceLoad: number;
+  efficiency?: number;
+  loadMassOverride?: number;
+  loadForceOverride?: number;
+};
+
+type WinchMachineConfig = {
+  elementId: string;
+  elementName: string;
+  drumDiameter: number;
+  handleDiameter: number;
+  gearRatio?: number;
+  efficiency?: number;
+  inputDisplacement?: number;
+  loadDisplacement?: number;
+  loadMassOverride?: number;
+  loadForceOverride?: number;
+};
+
+export type EditorMachineScene = {
+  ropeScene: RopeScene;
+  baseLoadMass: number;
+  levers: LeverMachineConfig[];
+  winches: WinchMachineConfig[];
+};
+
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function ensurePositive(value: number | undefined, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return fallback;
+}
+
+export function toRopeScene(
   elements: CanvasElement[],
   ropePath: string[],
   massKg: number,
-): RopeScene {
+): EditorMachineScene {
   const anchorsWithPos = deriveAnchors(elements);
   const ropeAnchors: RopeAnchor[] = anchorsWithPos.map((anchor) => {
     const base = {
@@ -334,7 +385,52 @@ function toRopeScene(
     .filter((anchor) => anchor.type === 'load' || anchor.attachedToLoad)
     .map((anchor) => anchor.resolvedId);
 
-  return {
+  const leverConfigs: LeverMachineConfig[] = elements
+    .filter((element): element is CanvasElement & { kind: 'lever' } => element.kind === 'lever')
+    .map((element) => {
+      const distanceEffort = ensurePositive(asNumber(element.data.armLeft), 1);
+      const distanceLoad = ensurePositive(asNumber(element.data.armRight), 1);
+      const efficiency = asNumber(element.data.efficiency);
+      const loadMassOverride = asNumber(element.data.loadMass);
+      const loadForceOverride = asNumber(element.data.loadForce);
+      return {
+        elementId: element.id,
+        elementName: element.name,
+        distanceEffort,
+        distanceLoad,
+        efficiency,
+        loadMassOverride,
+        loadForceOverride,
+      } satisfies LeverMachineConfig;
+    });
+
+  const winchConfigs: WinchMachineConfig[] = elements
+    .filter((element): element is CanvasElement & { kind: 'winch' } => element.kind === 'winch')
+    .map((element) => {
+      const drumDiameter = ensurePositive(asNumber(element.data.drumDiameter), 0.25);
+      const handleDiameter = ensurePositive(asNumber(element.data.handleDiameter), 0.4);
+      const gearRatio = asNumber(element.data.gearRatio);
+      const efficiency = asNumber(element.data.efficiency);
+      const inputDisplacement = asNumber(element.data.inputDisplacement);
+      const loadDisplacement = asNumber(element.data.loadDisplacement);
+      const loadMassOverride = asNumber(element.data.loadMass);
+      const loadForceOverride = asNumber(element.data.loadForce);
+
+      return {
+        elementId: element.id,
+        elementName: element.name,
+        drumDiameter,
+        handleDiameter,
+        gearRatio,
+        efficiency,
+        inputDisplacement,
+        loadDisplacement,
+        loadMassOverride,
+        loadForceOverride,
+      } satisfies WinchMachineConfig;
+    });
+
+  const ropeScene: RopeScene = {
     id: 'editor-scene',
     label: "Escena de l'editor",
     anchors: ropeAnchors,
@@ -344,6 +440,91 @@ function toRopeScene(
       anchorIds: loadAnchorIds,
     },
   };
+
+  return {
+    ropeScene,
+    baseLoadMass: massKg,
+    levers: leverConfigs,
+    winches: winchConfigs,
+  };
+}
+
+export type LeverMachineAnalysis = LeverMachineConfig & {
+  loadMass: number;
+  solver: ReturnType<typeof solveLeverRequiredForce>;
+};
+
+export type WinchMachineAnalysis = WinchMachineConfig & {
+  loadMass: number;
+  solver: ReturnType<typeof solveWinch>;
+};
+
+export function analyzeMachines(
+  scene: EditorMachineScene | null,
+  gravity: number,
+): { levers: LeverMachineAnalysis[]; winches: WinchMachineAnalysis[] } {
+  if (!scene) {
+    return { levers: [], winches: [] };
+  }
+
+  const leverAnalyses: LeverMachineAnalysis[] = [];
+  for (const lever of scene.levers) {
+    try {
+      const loadMass =
+        lever.loadMassOverride ??
+        (lever.loadForceOverride !== undefined
+          ? lever.loadForceOverride / gravity
+          : scene.baseLoadMass);
+
+      const solver = solveLeverRequiredForce({
+        loadMass,
+        distanceLoad: lever.distanceLoad,
+        distanceEffort: lever.distanceEffort,
+        efficiency: lever.efficiency,
+        units: { g: gravity },
+      });
+
+      leverAnalyses.push({
+        ...lever,
+        loadMass,
+        solver,
+      });
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+
+  const winchAnalyses: WinchMachineAnalysis[] = [];
+  for (const winch of scene.winches) {
+    try {
+      const loadMass =
+        winch.loadMassOverride ??
+        (winch.loadForceOverride !== undefined
+          ? winch.loadForceOverride / gravity
+          : scene.baseLoadMass);
+
+      const solver = solveWinch({
+        loadMass,
+        drumDiameter: winch.drumDiameter,
+        handleDiameter: winch.handleDiameter,
+        gearRatio: winch.gearRatio,
+        efficiency: winch.efficiency,
+        inputDisplacement: winch.inputDisplacement,
+        loadDisplacement: winch.loadDisplacement,
+        units: { g: gravity },
+      });
+
+      winchAnalyses.push({
+        ...winch,
+        loadMass,
+        solver,
+      });
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+
+  return { levers: leverAnalyses, winches: winchAnalyses };
 }
 
 function sanitizePath(path: string[], elements: CanvasElement[]): string[] {
@@ -377,7 +558,7 @@ function Editor() {
     [elements, selectedId],
   );
 
-  const ropeScene = useMemo(() => {
+  const machineScene = useMemo<EditorMachineScene | null>(() => {
     try {
       return toRopeScene(elements, ropePath, loadMass);
     } catch (error) {
@@ -385,6 +566,14 @@ function Editor() {
       return null;
     }
   }, [elements, ropePath, loadMass]);
+
+  const ropeScene = machineScene?.ropeScene ?? null;
+  const machineAnalyses = useMemo(() => analyzeMachines(machineScene, gravity), [
+    machineScene,
+    gravity,
+  ]);
+  const leverAnalyses = machineAnalyses.levers;
+  const winchAnalyses = machineAnalyses.winches;
 
   const handleSaveScene = useCallback(async () => {
     try {
@@ -700,12 +889,8 @@ function Editor() {
     [updateElement],
   );
 
-  const ropeSegments = useMemo(() => {
-    if (!analysis) {
-      return [];
-    }
-    return analysis.segments;
-  }, [analysis]);
+  const baseLoadForce = (machineScene?.baseLoadMass ?? loadMass) * gravity;
+  const hasAnyReadout = Boolean(analysis) || leverAnalyses.length > 0 || winchAnalyses.length > 0;
 
   return (
     <section className="editor">
@@ -967,6 +1152,83 @@ function Editor() {
                         />
                       </label>
                     )}
+                    {selectedElement.kind === 'lever' && (
+                      <>
+                        <label className="field">
+                          <span>d esforç (m)</span>
+                          <input
+                            type="number"
+                            min={0.05}
+                            max={5}
+                            step={0.01}
+                            value={Number(selectedElement.data.armLeft ?? 1)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                updateElementData(selectedElement.id, 'armLeft', value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>d càrrega (m)</span>
+                          <input
+                            type="number"
+                            min={0.05}
+                            max={5}
+                            step={0.01}
+                            value={Number(selectedElement.data.armRight ?? 1)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                updateElementData(selectedElement.id, 'armRight', value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>η palanca</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={Number(selectedElement.data.efficiency ?? 1)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                updateElementData(selectedElement.id, 'efficiency', value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>F
+                            <sub>G</sub>
+                            {' '}(N)
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={Number(selectedElement.data.loadForce ?? baseLoadForce)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                updateElementData(selectedElement.id, 'loadForce', value);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="field__action"
+                            onClick={() => updateElementData(selectedElement.id, 'loadForce', baseLoadForce)}
+                          >
+                            Reinicialitza
+                          </button>
+                        </label>
+                      </>
+                    )}
                     {selectedElement.kind === 'winch' && (
                       <>
                         <label className="field">
@@ -1006,6 +1268,22 @@ function Editor() {
                             onChange={(event) =>
                               updateElementData(selectedElement.id, 'gearRatio', Number(event.target.value))
                             }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>η torn</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={Number(selectedElement.data.efficiency ?? 0.85)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value)) {
+                                updateElementData(selectedElement.id, 'efficiency', value);
+                              }
+                            }}
                           />
                         </label>
                       </>
@@ -1161,104 +1439,280 @@ function Editor() {
 
           <section className="panel readouts">
             <h2>Readouts en viu</h2>
-            {analysis ? (
-              <dl className="readouts__grid">
-                <div>
-                  <dt>F
-                    <sub>in</sub>
-                  </dt>
-                  <dd>{effectiveInputForce ? `${formatNumber(effectiveInputForce)} N` : '—'}</dd>
-                </div>
-                <div>
-                  <dt>F
-                    <sub>G</sub>
-                  </dt>
-                  <dd>{formatNumber(analysis.loadForce)} N</dd>
-                </div>
-                <div>
-                  <dt>AM ideal</dt>
-                  <dd>{idealMA ? formatNumber(idealMA) : '—'}</dd>
-                </div>
-                <div>
-                  <dt>AM real</dt>
-                  <dd>{realMA ? formatNumber(realMA) : '—'}</dd>
-                </div>
-                <div>
-                  <dt>Treball in</dt>
-                  <dd>{workIn ? `${formatNumber(workIn)} J` : '—'}</dd>
-                </div>
-                <div>
-                  <dt>Treball out</dt>
-                  <dd>{workOut ? `${formatNumber(workOut)} J` : '—'}</dd>
-                </div>
-                <div>
-                  <dt>Eficiència</dt>
-                  <dd>{efficiency ? `${formatNumber(efficiency * 100, { maximumFractionDigits: 1 })}%` : '—'}</dd>
-                </div>
-              </dl>
+            {hasAnyReadout ? (
+              <>
+                {analysis && (
+                  <div className="readouts__section">
+                    <h3>Corda i politges</h3>
+                    <dl className="readouts__grid">
+                      <div>
+                        <dt>F
+                          <sub>in</sub>
+                        </dt>
+                        <dd>{effectiveInputForce ? `${formatNumber(effectiveInputForce)} N` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>F
+                          <sub>G</sub>
+                        </dt>
+                        <dd>{formatNumber(analysis.loadForce)} N</dd>
+                      </div>
+                      <div>
+                        <dt>AM ideal</dt>
+                        <dd>{idealMA ? formatNumber(idealMA) : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>AM real</dt>
+                        <dd>{realMA ? formatNumber(realMA) : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Treball in</dt>
+                        <dd>{workIn ? `${formatNumber(workIn)} J` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Treball out</dt>
+                        <dd>{workOut ? `${formatNumber(workOut)} J` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Eficiència</dt>
+                        <dd>
+                          {efficiency
+                            ? `${formatNumber(efficiency * 100, { maximumFractionDigits: 1 })}%`
+                            : '—'}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {analysis.segments.length > 0 && (
+                      <div className="readouts__segments">
+                        <h4>Trams</h4>
+                        <ul>
+                          {analysis.segments.map((segment) => (
+                            <li key={segment.index}>
+                              Tram {segment.index + 1}: {formatNumber(segment.tension)} N · μ ={' '}
+                              {formatNumber(segment.frictionFactor)}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <ExplainPanel
+                      title="Derivació de F_{in}"
+                      formulaLatex="F_{in} = \\frac{F_G}{\\sum_i m_i}"
+                      substitutions={{
+                        F_G: analysis.loadForce,
+                        '\\sum_i m_i': multiplierSum ?? '—',
+                      }}
+                      result={{
+                        label: 'F_{in}',
+                        value: analysis.inputForce,
+                        unit: 'N',
+                      }}
+                      formatNumber={formatNumber}
+                    />
+
+                    {ropePath.length > 0 && (
+                      <div className="readouts__path">
+                        <h4>Seqüència de corda</h4>
+                        <ol>
+                          {ropePath.map((anchorId, index) => {
+                            const anchor = anchors.find((item) => item.resolvedId === anchorId);
+                            return (
+                              <li key={`${anchorId}-${index}`}>
+                                {anchor ? anchor.label : anchorId}
+                                <button type="button" onClick={() => removeAnchorFromPath(index)}>
+                                  ✕
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      </div>
+                    )}
+
+                    {validationMessages.length > 0 && (
+                      <div className="readouts__validation">
+                        <h4>Validació</h4>
+                        <ul>
+                          {validationMessages.map((message, index) => (
+                            <li key={index}>{message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {leverAnalyses.length > 0 && (
+                  <div className="readouts__section">
+                    <h3>Palanques</h3>
+                    {leverAnalyses.map((lever) => {
+                      const leverResult = lever.solver.result;
+                      const mechanicalAdvantage =
+                        leverResult.inputForce !== 0
+                          ? leverResult.loadForce / leverResult.inputForce
+                          : null;
+
+                      return (
+                        <article key={lever.elementId} className="readouts__machine">
+                          <header>
+                            <h4>{lever.elementName}</h4>
+                          </header>
+                          <dl className="readouts__grid">
+                            <div>
+                              <dt>F
+                                <sub>in</sub>
+                              </dt>
+                              <dd>{formatNumber(leverResult.inputForce)} N</dd>
+                            </div>
+                            <div>
+                              <dt>F
+                                <sub>G</sub>
+                              </dt>
+                              <dd>{formatNumber(leverResult.loadForce)} N</dd>
+                            </div>
+                            <div>
+                              <dt>AM</dt>
+                              <dd>{mechanicalAdvantage ? formatNumber(mechanicalAdvantage) : '—'}</dd>
+                            </div>
+                            <div>
+                              <dt>d càrrega</dt>
+                              <dd>
+                                {formatNumber(lever.distanceLoad, {
+                                  maximumFractionDigits: 2,
+                                })}{' '}
+                                m
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>d esforç</dt>
+                              <dd>
+                                {formatNumber(lever.distanceEffort, {
+                                  maximumFractionDigits: 2,
+                                })}{' '}
+                                m
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>η palanca</dt>
+                              <dd>
+                                {leverResult.efficiency
+                                  ? `${formatNumber(leverResult.efficiency * 100, {
+                                      maximumFractionDigits: 1,
+                                    })}%`
+                                  : '—'}
+                              </dd>
+                            </div>
+                          </dl>
+                          <ExplainPanel
+                            title={`Càlcul de ${lever.elementName}`}
+                            formulaLatex={lever.solver.formulaLatex}
+                            substitutions={lever.solver.substitutions}
+                            result={{
+                              label: 'F_{in}',
+                              value: leverResult.inputForce,
+                              unit: 'N',
+                            }}
+                            formatNumber={formatNumber}
+                          />
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {winchAnalyses.length > 0 && (
+                  <div className="readouts__section">
+                    <h3>Torns</h3>
+                    {winchAnalyses.map((winch) => {
+                      const winchResult = winch.solver.result;
+                      const mechanicalEfficiency =
+                        winchResult.mechanicalAdvantageIdeal !== 0
+                          ? winchResult.mechanicalAdvantageReal /
+                            winchResult.mechanicalAdvantageIdeal
+                          : undefined;
+                      const workEfficiency =
+                        winchResult.workEfficiency ?? mechanicalEfficiency;
+
+                      return (
+                        <article key={winch.elementId} className="readouts__machine">
+                          <header>
+                            <h4>{winch.elementName}</h4>
+                          </header>
+                          <dl className="readouts__grid">
+                            <div>
+                              <dt>F
+                                <sub>in</sub>
+                              </dt>
+                              <dd>{formatNumber(winchResult.inputForce)} N</dd>
+                            </div>
+                            <div>
+                              <dt>τ
+                                <sub>in</sub>
+                              </dt>
+                              <dd>{formatNumber(winchResult.inputTorque)} N·m</dd>
+                            </div>
+                            <div>
+                              <dt>F
+                                <sub>G</sub>
+                              </dt>
+                              <dd>{formatNumber(winchResult.loadForce)} N</dd>
+                            </div>
+                            <div>
+                              <dt>AM ideal</dt>
+                              <dd>{formatNumber(winchResult.mechanicalAdvantageIdeal)}</dd>
+                            </div>
+                            <div>
+                              <dt>AM real</dt>
+                              <dd>{formatNumber(winchResult.mechanicalAdvantageReal)}</dd>
+                            </div>
+                            <div>
+                              <dt>Eficiència</dt>
+                              <dd>
+                                {workEfficiency
+                                  ? `${formatNumber(workEfficiency * 100, {
+                                      maximumFractionDigits: 1,
+                                    })}%`
+                                  : '—'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Treball in</dt>
+                              <dd>
+                                {winchResult.workInput
+                                  ? `${formatNumber(winchResult.workInput)} J`
+                                  : '—'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Treball out</dt>
+                              <dd>
+                                {winchResult.workOutput
+                                  ? `${formatNumber(winchResult.workOutput)} J`
+                                  : '—'}
+                              </dd>
+                            </div>
+                          </dl>
+                          <ExplainPanel
+                            title={`Càlcul de ${winch.elementName}`}
+                            formulaLatex={winch.solver.formulaLatex}
+                            substitutions={winch.solver.substitutions}
+                            result={{
+                              label: 'F_{in}',
+                              value: winchResult.inputForce,
+                              unit: 'N',
+                            }}
+                            formatNumber={formatNumber}
+                          />
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             ) : (
-              <p>Traça una corda vàlida per obtenir mesures.</p>
-            )}
-
-            {analysis && analysis.segments.length > 0 && (
-              <div className="readouts__segments">
-                <h3>Trams</h3>
-                <ul>
-                  {analysis.segments.map((segment) => (
-                    <li key={segment.index}>
-                      Tram {segment.index + 1}: {formatNumber(segment.tension)} N · μ ={' '}
-                      {formatNumber(segment.frictionFactor)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {analysis && (
-              <ExplainPanel
-                title="Derivació de F_{in}"
-                formulaLatex="F_{in} = \\frac{F_G}{\\sum_i m_i}"
-                substitutions={{
-                  F_G: analysis.loadForce,
-                  '\\sum_i m_i': multiplierSum ?? '—',
-                }}
-                result={{
-                  label: 'F_{in}',
-                  value: analysis.inputForce,
-                  unit: 'N',
-                }}
-                formatNumber={formatNumber}
-              />
-            )}
-
-            {ropePath.length > 0 && (
-              <div className="readouts__path">
-                <h3>Seqüència de corda</h3>
-                <ol>
-                  {ropePath.map((anchorId, index) => {
-                    const anchor = anchors.find((item) => item.resolvedId === anchorId);
-                    return (
-                      <li key={`${anchorId}-${index}`}>
-                        {anchor ? anchor.label : anchorId}
-                        <button type="button" onClick={() => removeAnchorFromPath(index)}>
-                          ✕
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </div>
-            )}
-
-            {validationMessages.length > 0 && (
-              <div className="readouts__validation">
-                <h3>Validació</h3>
-                <ul>
-                  {validationMessages.map((message, index) => (
-                    <li key={index}>{message}</li>
-                  ))}
-                </ul>
-              </div>
+              <p>Traça una corda vàlida o configura palanques/torns per obtenir mesures.</p>
             )}
           </section>
         </div>
