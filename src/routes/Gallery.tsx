@@ -60,21 +60,6 @@ function summarizeEvaluation(activities: ActivityResult[]) {
   return { totalEvaluated, npCount, npPercentage, average };
 }
 
-function getAverageClass(average: number | null) {
-  if (average === null) return 'is-neutral';
-  if (average >= 9) return 'is-excellent';
-  if (average >= 7) return 'is-good';
-  if (average >= 5) return 'is-warning';
-  return 'is-critical';
-}
-
-function getNpClass(npPercentage: number) {
-  if (npPercentage === 0) return 'is-excellent';
-  if (npPercentage <= 20) return 'is-good';
-  if (npPercentage <= 40) return 'is-warning';
-  return 'is-critical';
-}
-
 const PolispastBasicExample = () => {
   const fixedPulleys = 1;
   const movablePulleys = 1;
@@ -431,15 +416,9 @@ const EvaluationTable = () => {
                 <tr key={evaluation.name}>
                   <th scope="row">{evaluation.name}</th>
                   <td>{totalEvaluated}</td>
+                  <td>{average === null ? '—' : formatNumber(average, { maximumFractionDigits: 1 })}</td>
                   <td>
-                    <span className={`evaluation-badge ${getAverageClass(average)}`}>
-                      {average === null ? '—' : formatNumber(average, { maximumFractionDigits: 1 })}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`evaluation-badge ${getNpClass(npPercentage)}`}>
-                      {npCount}/{totalEvaluated} ({npPercentage}%)
-                    </span>
+                    {npCount}/{totalEvaluated} ({npPercentage}%)
                   </td>
                 </tr>
               );
