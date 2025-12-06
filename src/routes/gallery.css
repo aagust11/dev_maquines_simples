@@ -221,3 +221,44 @@
 .evaluation-table tbody tr:hover {
   background: rgba(59, 130, 246, 0.06);
 }
+
+.evaluation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: 1px solid transparent;
+}
+
+.evaluation-badge.is-excellent {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.evaluation-badge.is-good {
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.evaluation-badge.is-warning {
+  background: rgba(234, 179, 8, 0.12);
+  color: #b45309;
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
+.evaluation-badge.is-critical {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.evaluation-badge.is-neutral {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
