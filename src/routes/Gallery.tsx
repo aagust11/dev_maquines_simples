@@ -19,6 +19,47 @@ function formatNumber(value: number, options: Intl.NumberFormatOptions = {}) {
 
 const g = 9.81;
 
+type ActivityResult = number | 'NP';
+
+type StudentEvaluation = {
+  name: string;
+  activities: ActivityResult[];
+};
+
+const STUDENT_EVALUATIONS: StudentEvaluation[] = [
+  {
+    name: 'Anna Vidal',
+    activities: [9.2, 8.8, 'NP', 7.4, 8.1, 9.5, 'NP', 8.6, 9.1, 8.9],
+  },
+  {
+    name: 'Marc Solé',
+    activities: [7.8, 6.9, 7.1, 'NP', 8.0, 7.5, 7.2, 6.8, 'NP', 7.4],
+  },
+  {
+    name: 'Paula Ferrer',
+    activities: [10, 9.6, 9.1, 9.8, 9.5, 9.7, 9.4, 9.9, 9.2, 9.3],
+  },
+  {
+    name: 'Jordi Pons',
+    activities: ['NP', 'NP', 6.2, 6.7, 7.3, 6.9, 7.1, 'NP', 6.5, 6.8],
+  },
+];
+
+function summarizeEvaluation(activities: ActivityResult[]) {
+  const totalEvaluated = activities.length;
+  const npCount = activities.filter((activity) => activity === 'NP').length;
+  const npPercentage = totalEvaluated === 0 ? 0 : Math.round((npCount / totalEvaluated) * 100);
+
+  const gradedActivities = activities.filter(
+    (activity): activity is number => typeof activity === 'number' && Number.isFinite(activity),
+  );
+  const average = gradedActivities.length
+    ? gradedActivities.reduce((sum, value) => sum + value, 0) / gradedActivities.length
+    : null;
+
+  return { totalEvaluated, npCount, npPercentage, average };
+}
+
 const PolispastBasicExample = () => {
   const fixedPulleys = 1;
   const movablePulleys = 1;
@@ -351,6 +392,44 @@ const LeverFirstClassExample = () => {
   );
 };
 
+const EvaluationTable = () => {
+  return (
+    <article className="evaluation-card">
+      <header>
+        <h3>Resum de qualificacions</h3>
+        <p>Mitjana i registre de NP per a cada alumne.</p>
+      </header>
+      <div className="evaluation-table__wrapper">
+        <table className="evaluation-table">
+          <thead>
+            <tr>
+              <th>Alumne</th>
+              <th>Activitats avaluades</th>
+              <th>Mitjana (sobre 10)</th>
+              <th>NP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {STUDENT_EVALUATIONS.map((evaluation) => {
+              const { totalEvaluated, npCount, npPercentage, average } = summarizeEvaluation(evaluation.activities);
+              return (
+                <tr key={evaluation.name}>
+                  <th scope="row">{evaluation.name}</th>
+                  <td>{totalEvaluated}</td>
+                  <td>{average === null ? '—' : formatNumber(average, { maximumFractionDigits: 1 })}</td>
+                  <td>
+                    {npCount}/{totalEvaluated} ({npPercentage}%)
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+};
+
 const Gallery = () => {
   return (
     <section className="page page--gallery">
@@ -370,6 +449,11 @@ const Gallery = () => {
           <WinchExample />
           <LeverFirstClassExample />
         </div>
+      </article>
+      <article className="page__content">
+        <h2>Avaluació i registre de NP</h2>
+        <p>Registre automàtic dels NP per veure quantes activitats no s'han presentat.</p>
+        <EvaluationTable />
       </article>
     </section>
   );
